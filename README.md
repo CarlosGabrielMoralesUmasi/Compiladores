@@ -18,3 +18,6 @@ To use the program, simply create an instance of the AnalizadorLexico class and 
 
 ## Limitations
 This program is designed to analyze a single line of text and may not work as expected for multi-line text or complex syntax. Additionally, the program is designed to identify integers and keywords in the text but does not handle other data types or complex expressions. Finally, the program is limited by the maximum size of the Hash Table, which may affect its ability to identify keywords in very large texts.
+## Participants
+Carlos Gabriel Morales Umasi
+Joey Patrick Flores Davila
