@@ -1,5 +1,7 @@
 import re
 import sys
+import pyfiglet
+from colorama import Fore, Style
 from enum import Enum
 from collections import namedtuple
 
@@ -25,7 +27,6 @@ def tokenize(filename):
     line_number = 0
     indent_stack = [0]
 
-    print("INFO SCAN - Start scanning")
 
     for line in lines:
         line_number += 1
@@ -53,14 +54,14 @@ def tokenize(filename):
         # Maneja la indentación
         if indentation > indent_stack[-1]:
             indent_stack.append(indentation)
-            tokens.append(Token(TokenType.INDENT, "", line_number, indentation))
+            tokens.append(Token(TokenType.INDENT, " ", line_number, indentation))
         else:
             while indentation < indent_stack[-1]:
                 indent_stack.pop()
-                tokens.append(Token(TokenType.DEDENT, "", line_number, indentation))
+                tokens.append(Token(TokenType.DEDENT, " ", line_number, indentation))
 
         # Tokeniza la línea
-        token_pattern = re.compile(r"(\b(False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b)|([a-zA-Z][a-zA-Z0-9_]*)|([{}()[\]:,.])|(\b0\b|([1-9][0-9]*))|->|([=!<>%/*+\-]=?)|(\b0[0-9]+)|(\"(?:[^\"\\]|\\.)*\")")
+        token_pattern = re.compile(r"(\b(False|None|True|and|as|assert|async|await|break|class|continue|def|int|str|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b)|([a-zA-Z][a-zA-Z0-9_]*)|([{}()[\]:,.])|(\b0\b|([1-9][0-9]*))|->|([=!<>%/*+\-]=?)|(\b0[0-9]+)|(\"(?:[^\"\\]|\\.)*\")")
         search_start = 0
 
         for match in token_pattern.finditer(line):
@@ -85,7 +86,7 @@ def tokenize(filename):
             elif match.group(9):
                 token_type = TokenType.LITERAL
                 if re.search(r'\\[^"]', matched):
-                    print(f"Error lexico en la linea {line_number}: '{matched}' (secuencia de escape no reconocida)")
+                    print(Fore.RED + '[-]' + Style.RESET_ALL + f" Error lexico en la linea {line_number}: '{matched}' (secuencia de escape no reconocida)")
                     error_count += 1
             else:
                 token_type = TokenType.OPERATOR
@@ -95,349 +96,409 @@ def tokenize(filename):
             search_start = match.end()
 
         # Líneas nuevas
-        tokens.append(Token(TokenType.NEWLINE, "", line_number, len(line) + 1))
+        tokens.append(Token(TokenType.NEWLINE, "/n", line_number, len(line) + 1))
 
         # Manejo de errores léxicos
         if search_start != len(line.rstrip()) and not all(c.isspace() or c == '\t' for c in line[search_start:].rstrip()):
-            print(f"Error lexico en la linea {line_number}: '{line[search_start:].rstrip()}'")
+            print(Fore.RED + '[-]' + Style.RESET_ALL +f" Error lexico en la linea {line_number}: '{line[search_start:].rstrip()}'")
             error_count += 1
 
     # Genera tokens DEDENT al final de la entrada
     while indent_stack[-1] > 0:
         indent_stack.pop()
         tokens.append(Token(TokenType.DEDENT, "", line_number, 0))
+    
 
-    print(f"INFO SCAN - Completed with {error_count} errors")
-
+    print(Fore.BLUE + '[!]' + Style.RESET_ALL +f" INFO SCAN - Completed with {error_count} errors")
+    print()
+  
     return tokens
 
 
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
-        self.current_token = None
-        self.index = -1
-        self.next_token()
-    
-    def next_token(self):
-        self.index += 1
-        if self.index < len(self.tokens):
-            self.current_token = self.tokens[self.index]
+        self.curr_token = None
+        self.errors = []
+        self.next()
+
+    def next(self):
+        if len(self.tokens) > 0:
+            self.curr_token = self.tokens.pop(0)
+            print(Fore.GREEN + '[+] ' + Style.RESET_ALL + f'Token consumido:   [ {self.curr_token.value} ]    -    Tipo de token:   {self.curr_token.type}')
         else:
-            self.current_token = None
-    
-    def match(self, expected_type):
-        if self.current_token.type == expected_type:
-            self.next_token()
-        else:
-            self.error(f"Error: Expected {expected_type}, found {self.current_token.type}")
-    
+            self.curr_token = None
+
     def error(self, message):
-        raise Exception(message)
+        if self.curr_token is None:
+            self.errors.append(Fore.RED + '[-]' + Style.RESET_ALL + f" Error de sintaxis al final del archivo: {message}")
+        else:
+            self.errors.append(Fore.RED + '[-]' + Style.RESET_ALL + f" Error de sintaxis en línea {self.curr_token.line}: {message}")
+        self.next()
+
     
+    # Reglas de producción
+
     def Program(self):
         self.DefList()
         self.StatementList()
-    
+
     def DefList(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'def':
+        if self.curr_token is None:  # Asegúrese de que no hemos alcanzado el final del texto de entrada
+            return
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value == "def":
             self.Def()
             self.DefList()
-        else:
-            pass  # ε production
-    
+
+
     def Def(self):
-        self.match(TokenType.KEYWORD)
+        self.match(TokenType.KEYWORD, "def")
         self.match(TokenType.IDENTIFIER)
-        self.match(TokenType.DELIMITER)
+        self.match(TokenType.DELIMITER, "(")
         self.TypedVarList()
-        self.match(TokenType.DELIMITER)
+        self.match(TokenType.DELIMITER, ")")
         self.Return()
-        self.match(TokenType.DELIMITER)
+        self.match(TokenType.DELIMITER, ":")
         self.Block()
-    
+
     def TypedVar(self):
         self.match(TokenType.IDENTIFIER)
-        self.match(TokenType.DELIMITER)
+        self.match(TokenType.DELIMITER, ":")
         self.Type()
-    
+
     def Type(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value in ['int', 'str']:
-            self.match(TokenType.KEYWORD)
-        elif self.current_token.type == TokenType.DELIMITER and self.current_token.value == '[':
-            self.match(TokenType.DELIMITER)
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value in {"int", "str"}:
+            self.match(TokenType.KEYWORD, "int")
+        elif self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == "[":
+            self.match(TokenType.DELIMITER, "[")
             self.Type()
-            self.match(TokenType.DELIMITER)
-    
+            self.match(TokenType.DELIMITER, "]")
+        else:
+            self.error("Se esperaba 'int', 'str' o '['")
+
     def TypedVarList(self):
-        if self.current_token.type == TokenType.IDENTIFIER:
+        if self.curr_token.type == TokenType.IDENTIFIER:
             self.TypedVar()
             self.TypedVarListTail()
-        else:
-            pass  # ε production
-    
+
     def TypedVarListTail(self):
-        if self.current_token.type == TokenType.DELIMITER and self.current_token.value == ',':
-            self.match(TokenType.DELIMITER)
+        if self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == ",":
+            self.match(TokenType.DELIMITER, ",")
             self.TypedVar()
             self.TypedVarListTail()
-        else:
-            pass  # ε production
-    
+
     def Return(self):
-        if self.current_token.type == TokenType.DELIMITER and self.current_token.value == '->':
-            self.match(TokenType.DELIMITER)
+        if self.curr_token.type == TokenType.OPERATOR and self.curr_token.value == "->":
+            self.match(TokenType.OPERATOR, "->")
             self.Type()
-        else:
-            pass  # ε production
-    
+
     def Block(self):
-        self.match(TokenType.KEYWORD)
-        self.match(TokenType.KEYWORD)
+        self.match(TokenType.NEWLINE)
+        self.match(TokenType.INDENT)
         self.Statement()
         self.StatementList()
-        self.match(TokenType.KEYWORD)
+        self.match(TokenType.DEDENT)
     
     def StatementList(self):
-        if self.current_token.type in [TokenType.IDENTIFIER, TokenType.KEYWORD] or \
-           (self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'return'):
+        if self.curr_token is not None and self.curr_token.type != TokenType.DEDENT:
             self.Statement()
             self.StatementList()
+
+    def Statement(self):
+        if self.curr_token.type == TokenType.KEYWORD:
+            if self.curr_token.value == "if":
+                self.match(TokenType.KEYWORD, "if")
+                self.Expr()
+                self.match(TokenType.DELIMITER, ":")
+                self.Block()
+                self.ElifList()
+                self.Else()
+            elif self.curr_token.value == "while":
+                self.match(TokenType.KEYWORD, "while")
+                self.Expr()
+                self.match(TokenType.DELIMITER, ":")
+                self.Block()
+            elif self.curr_token.value == "for":
+                self.match(TokenType.KEYWORD, "for")
+                self.match(TokenType.IDENTIFIER)
+                self.match(TokenType.KEYWORD, "in")
+                self.Expr()
+                self.match(TokenType.DELIMITER, ":")
+                self.Block()
+            elif self.curr_token.value == "return":
+                self.match(TokenType.KEYWORD, "return")
+                self.ReturnExpr()
+                self.match(TokenType.NEWLINE)
+            elif self.curr_token.value == "pass":
+                self.match(TokenType.KEYWORD, "pass")
         else:
-            pass  # ε production
+            self.SimpleStatement()
+            self.match(TokenType.NEWLINE)
     
-        def Statement(self):
-          if self.current_token.type == TokenType.IDENTIFIER:
-              self.SimpleStatement()
-              self.match(TokenType.NEWLINE)
-          elif self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'if':
-              self.match(TokenType.KEYWORD)
-              self.Expr()
-              self.match(TokenType.DELIMITER)
-              self.Block()
-              self.ElifList()
-              self.Else()
-          elif self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'while':
-              self.match(TokenType.KEYWORD)
-              self.Expr()
-              self.match(TokenType.DELIMITER)
-              self.Block()
-          elif self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'for':
-              self.match(TokenType.KEYWORD)
-              self.match(TokenType.IDENTIFIER)
-              self.match(TokenType.KEYWORD)
-              self.Expr()
-              self.match(TokenType.DELIMITER)
-              self.Block()
-
-    def ElifList(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'elif':
-            self.match(TokenType.KEYWORD)
-            self.Expr()
-            self.match(TokenType.DELIMITER)
-            self.Block()
-            self.ElifList()
-        else:
-            pass  # ε production
-
-    def Else(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'else':
-            self.match(TokenType.KEYWORD)
-            self.match(TokenType.DELIMITER)
-            self.Block()
-        else:
-            pass  # ε production
-
     def SimpleStatement(self):
-        self.Expr()
-        self.SSTail()
+        if self.curr_token.type == TokenType.IDENTIFIER:
+            self.Expr()
+            self.SSTail()
+        else:
+            self.error("Se esperaba una declaración simple")
 
     def SSTail(self):
-        if self.current_token.type == TokenType.DELIMITER and self.current_token.value == '=':
-            self.match(TokenType.DELIMITER)
+        if self.curr_token.type == TokenType.OPERATOR and self.curr_token.value == "=":
+            self.match(TokenType.OPERATOR, "=")
             self.Expr()
-        else:
-            pass  # ε production
+
+    def ReturnExpr(self):
+        if self.curr_token.type != TokenType.NEWLINE:
+            self.Expr()
+        elif self.curr_token.type == TokenType.IDENTIFIER:
+            self.Name()
 
     def Expr(self):
         self.orExpr()
         self.ExprPrime()
 
     def ExprPrime(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'if':
-            self.match(TokenType.KEYWORD)
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value == "if":
+            self.match(TokenType.KEYWORD, "if")
             self.andExpr()
-            self.match(TokenType.KEYWORD)
+            self.match(TokenType.KEYWORD, "else")
             self.andExpr()
             self.ExprPrime()
+    
+    def ElifList(self):
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value == "elif":
+            self.Elif()
+            self.ElifList()
+
+    def Elif(self):
+        self.match(TokenType.KEYWORD, "elif")
+        self.Expr()
+        self.match(TokenType.DELIMITER, ":")
+        self.Block()
+
+    def Else(self):
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value == "else":
+            self.match(TokenType.KEYWORD, "else")
+            self.match(TokenType.DELIMITER, ":")
+            self.Block()
+
+    def match(self, token_type, token_value=None):
+        if self.curr_token is None:
+            self.error("Se esperaba más entrada pero se encontró el final del archivo")
+            return
+    
+        if self.curr_token.type != token_type or (token_value is not None and self.curr_token.value != token_value):
+            self.error(f"Se esperaba '{token_type} {token_value}' pero se obtuvo '{self.curr_token.type} {self.curr_token.value}'")
+            self.next()
         else:
-            pass  # ε production
+            self.next()
 
     def orExpr(self):
         self.andExpr()
         self.orExprPrime()
 
     def orExprPrime(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'or':
-            self.match(TokenType.KEYWORD)
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value == "or":
+            self.match(TokenType.KEYWORD, "or")
             self.andExpr()
             self.orExprPrime()
-        else:
-            pass  # ε production
-
+        
     def andExpr(self):
         self.notExpr()
         self.andExprPrime()
 
     def andExprPrime(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'and':
-            self.match(TokenType.KEYWORD)
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value == "and":
+            self.match(TokenType.KEYWORD, "and")
             self.notExpr()
             self.andExprPrime()
-        else:
-            pass  # ε production
 
     def notExpr(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'not':
-            self.match(TokenType.KEYWORD)
+        self.CompExpr()
+        self.notExprPrime()
+
+    def notExprPrime(self):
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value == "not":
+            self.match(TokenType.KEYWORD, "not")
             self.CompExpr()
-        else:
-            self.CompExpr()
+            self.notExprPrime()
 
     def CompExpr(self):
         self.IntExpr()
         self.CompExprPrime()
 
     def CompExprPrime(self):
-        if self.current_token.type == TokenType.OPERATOR and self.current_token.value in ['==', '!=', '<', '>', '<=', '>=', 'is']:
-            self.match(TokenType.OPERATOR)
+        if self.curr_token.type == TokenType.OPERATOR and self.curr_token.value in {"==", "!=", "<", ">", "<=", ">="}:
+            self.match(TokenType.OPERATOR, self.curr_token.value)
             self.IntExpr()
             self.CompExprPrime()
-        else:
-            pass  # ε production
 
     def IntExpr(self):
         self.Term()
         self.IntExprPrime()
 
-        def IntExprPrime(self):
-          if self.current_token.type == TokenType.OPERATOR and self.current_token.value == '+':
-              self.match(TokenType.OPERATOR)
-              self.Term()
-              self.IntExprPrime()
-          elif self.current_token.type == TokenType.OPERATOR and self.current_token.value == '-':
-              self.match(TokenType.OPERATOR)
-              self.Term()
-              self.IntExprPrime()
-          else:
-              pass  # ε production
+    def IntExprPrime(self):
+        if self.curr_token.type == TokenType.OPERATOR and self.curr_token.value in {"+", "-"}:
+            self.match(TokenType.OPERATOR, self.curr_token.value)
+            self.Term()
+            self.IntExprPrime()
 
     def Term(self):
         self.Factor()
         self.TermPrime()
 
     def TermPrime(self):
-        if self.current_token.type == TokenType.OPERATOR and self.current_token.value == '*':
-            self.match(TokenType.OPERATOR)
+        if self.curr_token.type == TokenType.OPERATOR and self.curr_token.value in {"*", "/", "%"}:
+            self.match(TokenType.OPERATOR, self.curr_token.value)
             self.Factor()
             self.TermPrime()
-        elif self.current_token.type == TokenType.OPERATOR and self.current_token.value == '//':
-            self.match(TokenType.OPERATOR)
-            self.Factor()
-            self.TermPrime()
-        elif self.current_token.type == TokenType.OPERATOR and self.current_token.value == '%':
-            self.match(TokenType.OPERATOR)
-            self.Factor()
-            self.TermPrime()
-        else:
-            pass  # ε production
+
 
     def Factor(self):
-        if self.current_token.type == TokenType.OPERATOR and self.current_token.value == '-':
-            self.match(TokenType.OPERATOR)
+        if self.curr_token.type == TokenType.OPERATOR and self.curr_token.value == "-":
+            self.match(TokenType.OPERATOR, self.curr_token.value)
             self.Factor()
-        elif self.current_token.type == TokenType.IDENTIFIER:
+        elif self.curr_token.type == TokenType.IDENTIFIER:
             self.Name()
-        elif self.current_token.type == TokenType.LITERAL:
+        elif self.curr_token.type in {TokenType.LITERAL, TokenType.KEYWORD}:
             self.Literal()
-        elif self.current_token.type == TokenType.DELIMITER and self.current_token.value == '[':
+        elif self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == "[":
             self.List()
-        elif self.current_token.type == TokenType.DELIMITER and self.current_token.value == '(':
-            self.match(TokenType.DELIMITER)
+        elif self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == "(":
+            self.match(TokenType.DELIMITER, self.curr_token.value)
             self.Expr()
-            self.match(TokenType.DELIMITER)
-        else:
-            self.error("Factor")
+            if self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == ")":
+                self.match(TokenType.DELIMITER, self.curr_token.value)
+            else:
+                self.error("Se esperaba ')'")
 
     def Name(self):
-        self.match(TokenType.IDENTIFIER)
-        self.NameTail()
+        if self.curr_token.type == TokenType.IDENTIFIER:
+            self.match(TokenType.IDENTIFIER, self.curr_token.value)
+            self.NameTail()
 
     def NameTail(self):
-        if self.current_token.type == TokenType.DELIMITER and self.current_token.value == '(':
-            self.match(TokenType.DELIMITER)
+        if self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == "(":
+            self.match(TokenType.DELIMITER, self.curr_token.value)
             self.ExprList()
-            self.match(TokenType.DELIMITER)
-        elif self.current_token.type == TokenType.DELIMITER and self.current_token.value == '[':
+            if self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == ")":
+                self.match(TokenType.DELIMITER, self.curr_token.value)
+            else:
+                self.error("Se esperaba ')'")
+        elif self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == "[":
             self.List()
-        else:
-            pass  # ε production
 
     def Literal(self):
-        self.match(TokenType.LITERAL)
+        if self.curr_token.type == TokenType.KEYWORD and self.curr_token.value in {"None", "True", "False"}:
+             self.match(TokenType.KEYWORD, self.curr_token.value)
+        elif self.curr_token.type == TokenType.LITERAL:
+            self.match(TokenType.LITERAL, self.curr_token.value)
+        else:
+            self.error("Se esperaba un literal")
 
     def List(self):
-        self.match(TokenType.DELIMITER)
-        self.ExprList()
-        self.match(TokenType.DELIMITER)
+        if self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == "[":
+            self.match(TokenType.DELIMITER, self.curr_token.value)
+            self.ExprList()
+            if self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == "]":
+                self.match(TokenType.DELIMITER, self.curr_token.value)
+            else:
+                self.error("Se esperaba ']'")
 
     def ExprList(self):
-        if self.current_token.type == TokenType.DELIMITER and self.current_token.value == ']':
-            pass  # ε production
-        else:
+        if self.curr_token.type not in {TokenType.DELIMITER, TokenType.NEWLINE, TokenType.DEDENT}:
             self.Expr()
             self.ExprListTail()
 
     def ExprListTail(self):
-        if self.current_token.type == TokenType.DELIMITER and self.current_token.value == ',':
-            self.match(TokenType.DELIMITER)
+        if self.curr_token.type == TokenType.DELIMITER and self.curr_token.value == ",":
+            self.match(TokenType.DELIMITER, self.curr_token.value)
             self.Expr()
             self.ExprListTail()
-        else:
-            pass  # ε production
+
 
     def CompOp(self):
-        if self.current_token.type == TokenType.OPERATOR and self.current_token.value in ['==', '!=', '<', '>', '<=', '>=', 'is']:
-            self.match(TokenType.OPERATOR)
+        if self.curr_token.type == TokenType.OPERATOR and self.curr_token.value in {"==", "!=", "<", ">", "<=", ">=", "is"}:
+            self.match(TokenType.OPERATOR, self.curr_token.value)
         else:
-            self.error("CompOp")
+            self.error("Se esperaba un operador de comparación") 
 
 
-    def ReturnExpr(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'return':
-            self.match(TokenType.KEYWORD)
-            self.Expr()
-        else:
-            pass  # ε production
-    
-    def Literal(self):
-        if self.current_token.type == TokenType.KEYWORD and self.current_token.value in ['None', 'True', 'False']:
-            self.match(TokenType.KEYWORD)
-        elif self.current_token.type == TokenType.INTEGER:
-            self.match(TokenType.INTEGER)
-        elif self.current_token.type == TokenType.STRING:
-            self.match(TokenType.STRING)
-        else:
-            self.error("Literal")
-    
+
+from colorama import Fore, Style
+
+def print_with_frame(text, frame_color, text_color):
+    # Determinar la longitud máxima de una línea en el texto
+    max_line_length = max(len(line) for line in text.split("\n"))
+
+    # Crear el marco
+    frame = "+" + "-" * (max_line_length + 2) + "+"
+
+    # Imprimir el marco en color blanco
+    print(frame_color + frame)
+
+    # Imprimir el texto enmarcado en color personalizado
+    for line in text.split("\n"):
+        print(frame_color + "|" + text_color, line.center(max_line_length), frame_color + "|")
+
+    # Imprimir el marco en color blanco
+    print(frame_color + frame + Style.RESET_ALL)
+
+
+# Texto a imprimir en un marco
+texto = """
+
+░█████╗░██╗░░██╗░█████╗░░█████╗░░█████╗░██████╗░██╗░░░██╗
+██╔══██╗██║░░██║██╔══██╗██╔══██╗██╔══██╗██╔══██╗╚██╗░██╔╝
+██║░░╚═╝███████║██║░░██║██║░░╚═╝██║░░██║██████╔╝░╚████╔╝░
+██║░░██╗██╔══██║██║░░██║██║░░██╗██║░░██║██╔═══╝░░░╚██╔╝░░
+╚█████╔╝██║░░██║╚█████╔╝╚█████╔╝╚█████╔╝██║░░░░░░░░██║░░░
+░╚════╝░╚═╝░░╚═╝░╚════╝░░╚════╝░░╚════╝░╚═╝░░░░░░░░╚═╝░░░
+
+░█████╗░░█████╗░███╗░░░███╗██████╗░██╗██╗░░░░░███████╗██████╗░
+██╔══██╗██╔══██╗████╗░████║██╔══██╗██║██║░░░░░██╔════╝██╔══██╗
+██║░░╚═╝██║░░██║██╔████╔██║██████╔╝██║██║░░░░░█████╗░░██████╔╝
+██║░░██╗██║░░██║██║╚██╔╝██║██╔═══╝░██║██║░░░░░██╔══╝░░██╔══██╗
+╚█████╔╝╚█████╔╝██║░╚═╝░██║██║░░░░░██║███████╗███████╗██║░░██║
+░╚════╝░░╚════╝░╚═╝░░░░░╚═╝╚═╝░░░░░╚═╝╚══════╝╚══════╝╚═╝░░╚═╝
+"""
+
 
 def main():
-    filename = "input.txt"
-    tokens = tokenize(filename)
 
+    print_with_frame(texto, Fore.WHITE, Fore.WHITE)
+
+    filename = "test.txt"
+    print("\033[38;2;255;255;0mStart scanning...\033[0m")
+    tokens = tokenize(filename)   
     for token in tokens:
         token_type_name = token.type.name
-        print(f"DEBUG SCAN - {token_type_name}\t\t[ {token.value} ]\t found at ({token.line}:{token.column})")
+        print(Fore.GREEN + '[+]' + Style.RESET_ALL +f" DEBUG SCAN - {token_type_name}\t\t[ {token.value} ]\t found at ({token.line}:{token.column})")
+
+    print()
+    print("\033[38;2;255;255;0mStart parsing...\033[0m")
+
+    parser = Parser(tokens)
+
+    # Intenta parsear la gramática completa
+    try:
+        parser.Program()
+
+        # Si no hay errores, entonces el código es válido
+        if not parser.errors:
+            print()
+            print("El código de entrada pertenece al lenguaje.")
+            print(Fore.GREEN + '[+]' + Style.RESET_ALL + f' No se encontraron errores.')
+        else:
+            print()
+            print("El código de entrada NO pertenece al lenguaje. Los errores son:")
+            for error in parser.errors:
+                print(f"\t {error}")
+            print(Fore.BLUE + '[!]' + Style.RESET_ALL + f' Se encontraron {len(parser.errors)} errores.')
+
+    except Exception as e:
+        print(Fore.RED + f"Hubo un error durante el análisis: {e}" + Style.RESET_ALL)
+
 
 if __name__ == "__main__":
     main()
