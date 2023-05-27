@@ -35,7 +35,6 @@ El analizador sintáctico se encarga de verificar la estructura y la gramática 
 Reemplaza archivo.chocopy con la ruta al archivo que deseas analizar. El analizador sintáctico mostrará los tokens consumidos y cualquier error sintáctico encontrado.
 
 ## Licencia
-## Licencia
 
 Este proyecto está bajo la Licencia MIT. Para más detalles, consulta el archivo [LICENSE](LICENSE).
 
