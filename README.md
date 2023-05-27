@@ -1,23 +1,42 @@
 # Compiladores
 
-## Description
- 
-The program is an implementation of a lexical analyzer in Python, also known as a lexer or scanner. Its purpose is to analyze a string of text and generate a sequence of tokens, which are units of syntax in the text. This program includes a Hash Table, a data structure used to store and retrieve key-value pairs, which is used to identify keywords in the text.
+# CHOCOPY Scanner and Parser
 
-## How it works
-The program reads a string of text and performs a lexical analysis by identifying each token in the text. It begins by defining several constants, including the set of digits and letters that are allowed in the text. It then defines a dictionary of delimiter characters, such as parentheses and commas, along with their corresponding token names. The program also defines a Hash Table to store the keywords that are found in the text.
+Este proyecto implementa un escáner y un analizador sintáctico (parser) para el lenguaje de programación "CHOCOPY". El escáner se encarga de tokenizar el código fuente en archivos CHOCOPY, mientras que el analizador sintáctico se encarga de verificar la estructura y la gramática del código.
 
-The program creates an instance of the AnalizadorLexico class, which initializes several attributes, including the text to be analyzed and the position of the lexer in the text. The class includes several methods that are used to perform the lexical analysis. The getChar method returns the next character in the text, and the peekChar method returns the following character without advancing the lexer's position.
+## Requisitos
 
-The crearNumero method is called when the lexer encounters a sequence of digits in the text. It reads the digits and creates a Token object to represent the integer value.
+- Python 3.x
+- Biblioteca `re`
+- Biblioteca `sys`
+- Biblioteca `pyfiglet`
+- Biblioteca `colorama`
 
-The crearTokens method is used to generate all the tokens in the text. It iterates through each character in the text, identifying the appropriate token for each character. If a keyword is identified, the method uses the Hash Table to retrieve its token name. If a digit is identified, the method calls the crearNumero method to create a token for the integer value. If a delimiter is identified, the method retrieves its token name from the dictionary of delimiter characters.
+## Instalación
 
-## Usage
-To use the program, simply create an instance of the AnalizadorLexico class and pass in a string of text to be analyzed. The program will generate a sequence of Token objects, which can be printed using the getTokens method.
+1. Clona este repositorio:
 
-## Limitations
-This program is designed to analyze a single line of text and may not work as expected for multi-line text or complex syntax. Additionally, the program is designed to identify integers and keywords in the text but does not handle other data types or complex expressions. Finally, the program is limited by the maximum size of the Hash Table, which may affect its ability to identify keywords in very large texts.
+   ```bash
+   git clone 
+2. Accede al directorio del proyecto:
+- cd chocopy-scanner-parser
+3. Opcionalmente, se recomienda crear y activar un entorno virtual para el proyecto.
+## Uso
+El proyecto consta de dos archivos principales: scanner.py y parser.py. A continuación, se explica cómo utilizar cada uno de ellos:
+
+### Escáner (scanner.py)
+El escáner se encarga de tokenizar el código fuente en archivos CHOCOPY. Para ejecutar el escáner, utiliza el siguiente comando:
+- python scanner.py archivo.chocopy
+Reemplaza archivo.chocopy con la ruta al archivo que deseas analizar. El escáner mostrará la lista de tokens generados y cualquier error léxico encontrado.
+
+### Analizador sintáctico (parser.py)
+El analizador sintáctico se encarga de verificar la estructura y la gramática del código fuente en archivos CHOCOPY. Para ejecutar el analizador sintáctico, utiliza el siguiente comando:
+- python parser.py archivo.chocopy
+Reemplaza archivo.chocopy con la ruta al archivo que deseas analizar. El analizador sintáctico mostrará los tokens consumidos y cualquier error sintáctico encontrado.
+
+## Licencia
+Este proyecto está bajo la Licencia MIT. Consulta el archivo LICENSE para obtener más detalles.
+
 ## Participants
 -Carlos Gabriel Morales Umasi
 
